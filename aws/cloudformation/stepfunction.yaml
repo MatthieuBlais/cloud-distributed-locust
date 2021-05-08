@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  # If using differnet stack name, also need to change name of the target Lambda in SF: distributed-locust-orchestration-check-master-status
+
+  locustFargateStack:
+    Description: Name of the fargate stack that created the cluster and the staging bucket
+    Default: distributed-locust
+
+  workflowName:
+    Description: Name of the step function orchestrating distributed locust
+    Type: String
+    Default: ml-serving-distributed-locust
+
+  lambdaPackage:
+    Description: Location of the lambda code
+    Type: String
+    Default: _lambdas/loadtest.zip
+
+Resources:
+
+  GetMasterStatus:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        S3Bucket: 
+          Fn::ImportValue:
+            !Sub "${locustFargateStack}-staging-bucket"
+        S3Key: !Ref lambdaPackage
+      Description: "Distributed locust: Check if master node is ready"
+      FunctionName: !Sub "${AWS::StackName}-check-master-status"
+      Handler: "status.handler"
+      MemorySize: 512
+      Role: !GetAtt [LambdaRole, Arn]
+      Runtime: python3.8
+      Timeout: 30
+
+  StateMachineWorkflow:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn: LogGroup
+    Properties:
+      StateMachineName: !Ref workflowName
+      DefinitionString: |-
+        {
+          "StartAt": "Load Testing Flow",
+          "States": {
+              "Load Testing Flow": {
+                  "Type": "Parallel",
+                  "Next": "Success",
+                  "Branches": [
+                    {
+                    "StartAt": "Start Master Node",
+                    "States": {
+                      "Start Master Node": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::ecs:runTask.sync",
+                          "Parameters": {
+                              "Cluster.$": "$.JobDetails.ClusterName",
+                              "LaunchType": "FARGATE",
+                              "TaskDefinition.$": "$.JobDetails.TaskDefinition",
+                              "Overrides": {
+                                  "ContainerOverrides": [
+                                      {
+                                          "Name.$": "$.JobDetails.MasterTaskName",
+                                          "Command.$": "$.JobDetails.MasterCommand",
+                                          "Environment": [
+                                            {
+                                              "Name": "EXECUTION_ID",
+                                              "Value.$": "$.JobDetails.ExecutionId"
+                                            },
+                                            {
+                                              "Name": "AWS_REGION",
+                                              "Value.$": "$.JobDetails.AwsRegion"
+                                            },
+                                            {
+                                              "Name": "ENDPOINT_NAME",
+                                              "Value.$": "$.EndpointName"
+                                            },
+                                            {
+                                              "Name": "TEST_DATASET_BUCKET",
+                                              "Value.$": "$.TestDataset.Bucket"
+                                            },
+                                            {
+                                              "Name": "TEST_DATASET_KEY",
+                                              "Value.$": "$.TestDataset.Key"
+                                            }
+                                          ]
+                                      }
+                                  ]
+                              },
+                              "NetworkConfiguration": {
+                                  "AwsvpcConfiguration": {
+                                      "Subnets.$": "$.JobDetails.Subnets",
+                                      "SecurityGroups.$": "$.JobDetails.SecurityGroups",
+                                      "AssignPublicIp": "ENABLED"
+                                  }
+                              }
+                          },
+                          "ResultPath": null,
+                          "End": true
+                        }
+                    }
+                  },
+                  {
+                    "StartAt": "Wait For Master Node",
+                    "States": {
+                      "Wait For Master Node": {
+                          "Type": "Wait",
+                          "Seconds": 30,
+                          "Next": "Get Master status"
+                        },
+                      "Get Master status": {
+                        "Type": "Task",
+                        "Resource":
+                          "arn:aws:lambda:::function:distributed-locust-orchestration-check-master-status",
+                        "Next": "If Master Ready"
+                      },
+                      "If Master Ready": {
+                          "Type": "Choice",
+                          "Choices": [
+                            {
+                              "Variable": "$.MasterStatus",
+                              "StringEquals": "RUNNING",
+                              "Next": "Start Workers"
+                            },
+                            {
+                              "Variable": "$.MasterStatus",
+                              "StringEquals": "STOPPED",
+                              "Next": "Master Failure"
+                            }
+                          ],
+                          "Default": "Wait For Master Node"
+                      },
+                      "Master Failure": {
+                        "Type": "Fail"
+                      },
+                        "Start Workers": {
+                          "Type": "Map",
+                          "ItemsPath": "$.Jobs",
+                          "MaxConcurrency": 0,
+                          "Iterator": {
+                            "StartAt": "Start Worker",
+                            "States": {
+                              "Start Worker": {
+                                  "Type": "Task",
+                                  "Resource": "arn:aws:states:::ecs:runTask.sync",
+                                  "Parameters": {
+                                      "Cluster.$": "$.ClusterName",
+                                      "LaunchType": "FARGATE",
+                                      "TaskDefinition.$": "$.TaskDefinition",
+                                      "Overrides": {
+                                          "ContainerOverrides": [
+                                              {
+                                                  "Name.$": "$.WorkerTaskName",
+                                                  "Command.$": "$.WorkerCommand",
+                                                  "Environment": [
+                                                  {
+                                                      "Name": "EXECUTION_ID",
+                                                      "Value.$": "$.ExecutionId"
+                                                  },
+                                                  {
+                                                      "Name": "AWS_REGION",
+                                                      "Value.$": "$.AwsRegion"
+                                                  },
+                                                  {
+                                                      "Name": "ENDPOINT_NAME",
+                                                      "Value.$": "$.EndpointName"
+                                                  },
+                                                  {
+                                                      "Name": "TEST_DATASET_BUCKET",
+                                                      "Value.$": "$.TestDataset.Bucket"
+                                                  },
+                                                  {
+                                                      "Name": "TEST_DATASET_KEY",
+                                                      "Value.$": "$.TestDataset.Key"
+                                                  }
+                                                  ]
+                                              }
+                                          ]
+                                      },
+                                      "NetworkConfiguration": {
+                                          "AwsvpcConfiguration": {
+                                              "Subnets.$": "$.Subnets",
+                                              "SecurityGroups.$": "$.SecurityGroups",
+                                              "AssignPublicIp": "ENABLED"
+                                          }
+                                      }
+                                  },
+                                  "ResultPath": null,
+                                  "End": true
+                              }
+                            }
+                          },
+                          "End": true
+                        }
+                    }
+                  }
+                ],
+                "Catch":[
+                  {
+                      "ErrorEquals": ["States.ALL"],
+                      "ResultPath": "$.Error",
+                      "Next": "Fail"
+                  }
+                ]
+              },
+              "Success": {
+                  "Type": "Succeed"
+              },
+              "Fail": {
+                  "Type": "Fail"
+              }
+          }
+        }
+      RoleArn: !GetAtt "StateMachineRole.Arn"
+      StateMachineType: STANDARD
+      LoggingConfiguration:
+        Destinations:
+        - CloudWatchLogsLogGroup:
+            LogGroupArn: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${workflowName}:*"
+        IncludeExecutionData: True
+        Level: "ALL"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/vendedlogs/states/${workflowName}"
+      RetentionInDays: 7
+
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-stepfunction-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+            - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+        Version: "2012-10-17"
+      Path: "/"
+      ManagedPolicyArns: []
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'events:PutTargets'
+                  - 'events:PutRule'
+                  - 'events:DescribeRule'
+                Resource:
+                  - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule"
+                  - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule"
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogDelivery'
+                  - 'logs:GetLogDelivery'
+                  - "logs:UpdateLogDelivery"
+                  - "logs:DeleteLogDelivery"
+                  - "logs:ListLogDeliveries"
+                  - "logs:PutResourcePolicy"
+                  - "logs:DescribeResourcePolicies"
+                  - "logs:DescribeLogGroups"
+                Resource:
+                  - "*"
+        - PolicyName: lambda
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-check-master-status"
+        - PolicyName: ecs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:DescribeTasks'
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - 'ecs:RunTask'
+                  - 'ecs:StopTask'
+                Resource:
+                  - "*" # To restrict if sharing cluster with other tasks
+              - Effect: Allow
+                Action:
+                  - 'iam:PassRole'
+                Resource:
+                  - "*" # To restrict
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-lambda-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+            - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: "2012-10-17"
+      Path: "/"
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+        - PolicyName: ecs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:ListTasks'
+                  - 'ecs:DescribeTasks'
+                Resource: 
+                  - '*'
+        - PolicyName: s3
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:List*'
+                  - 's3:GetBucketLocation'
+                Resource:
+                  - Fn::ImportValue:
+                      !Sub "arn:aws:s3:::${locustFargateStack}-staging-bucket"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:HeadObject
+                Resource:
+                  - Fn::ImportValue:
+                      !Sub "arn:aws:s3:::${locustFargateStack}-staging-bucket/*"
+  
