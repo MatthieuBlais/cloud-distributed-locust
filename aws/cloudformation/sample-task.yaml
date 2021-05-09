@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+
+  taskName:
+    Description: Name of the sample task
+    Type: String
+    Default: distributed-locust-single-shape-load
+
+  ecrRepo:
+    Description: ECR repository image name for your sample app
+    Type: String
+    Default: distributed-locust/single-shape-load
+
+  stagingBucket:
+    Description: Bucket used by fargate to store temporary files
+    Type: String
+
+  imageVersion:
+    Description: ECR image version to use
+    Type: String
+    Default: latest
+
+  subnet1Cidr:
+    Description: Subnet to use to deploy the tasks. Required to established connection between nodes
+    Type: String
+
+  subnet2Cidr:
+    Description: Second subnet to use to deploy the tasks. Required to established connection between nodes
+    Type: String
+
+  vpcId:
+    Description: VPC Id to use by the task
+    Type: String
+
+Resources:
+
+  SingleShapeLoadECRRepo: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Ref ecrRepo
+
+  TaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: !Ref taskName
+      Cpu: 1024
+      Memory: 2048
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      TaskRoleArn: !Ref TaskExecutionRole
+      ContainerDefinitions:
+        - Name: !Ref taskName
+          Cpu: 1024
+          Memory: 2048
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ecrRepo}:${imageVersion}"
+          PortMappings:
+            - ContainerPort: 5557
+              HostPort: 5557
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: !Ref AWS::StackName
+
+  LocustSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: "Security Group for distributed Locust"
+      GroupName: !Ref AWS::StackName
+      SecurityGroupEgress: 
+        - CidrIp: 0.0.0.0/0
+          Description: "all outbound"
+          IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+      SecurityGroupIngress: 
+        - CidrIp: !Ref subnet1Cidr
+          Description: vpc-private-subnets
+          IpProtocol: tcp
+          FromPort: 5557
+          ToPort: 5557
+        - CidrIp: !Ref subnet2Cidr
+          Description: vpc-private-subnets
+          IpProtocol: tcp
+          FromPort: 5557
+          ToPort: 5557
+      VpcId: !Ref vpcId
+
+
+  TaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+        - PolicyName: ecr
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:BatchGetImage'
+                Resource: 
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ecrRepo}"
+              - Effect: Allow
+                Action:
+                  - 'ecr:GetAuthorizationToken'
+                Resource: '*'
+        - PolicyName: ecs
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:ListTasks'
+                  - 'ecs:DescribeTasks'
+                Resource: 
+                  - '*'
+        - PolicyName: s3
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:List*'
+                  - 's3:GetBucketLocation'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${stagingBucket}'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:HeadObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${stagingBucket}/*'
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /fargate/${AWS::StackName}
+      RetentionInDays: 7
+
+  
+Outputs:
+
+  singleShapeLoadECRRepo:
+    Description: Name of the ECR Repo to use
+    Value: !Ref SingleShapeLoadECRRepo
+
+  taskDefinition:
+    Description: Task definition created
+    Value: !Ref TaskDefinition

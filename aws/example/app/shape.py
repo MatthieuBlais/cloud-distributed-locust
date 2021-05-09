@@ -6,7 +6,7 @@ import sys
 import boto3
 import os
 from locust import LoadTestShape
-
+ 
 class StagesShape(LoadTestShape):
     """
         Shapes must look like this, uploaded to a bucket
@@ -20,14 +20,13 @@ class StagesShape(LoadTestShape):
             {"duration": 210, "users": 0, "spawn_rate": 100}
         ]
     """
-    
-    s3 = boto3.client('s3', region_name=os.environ["AWS_REGION"])
     time_limit = 600
     spawn_rate = 20
     stop_at_end = True
     stages = []
 
     def __init__(self, stages_bucket, stages_key, mode="users", *args, **kwargs):
+        self.s3 = boto3.client('s3', region_name=os.environ["AWS_REGION"])
         self.stages = self.download_stages(stages_bucket, stages_key)
         self.step = 0
         self.time_active = False
@@ -78,17 +77,17 @@ class StagesShape(LoadTestShape):
 
 class APIInterface(FastHttpUser):
     """
-        Client calling the ML model API. Download test data and submit post requests
+        Client calling the API. Download test data and submit post requests
     """
 
     s3 = boto3.client('s3', region_name=os.environ["AWS_REGION"])
-    endpoint_name = os.environ["ENDPOINT_NAME"]
+    method_path = os.environ["METHOD_PATH"]
     headers = {'Content-Type': os.environ.get("CONTENT_TYPE", 'application/json'), 'Accept': 'application/json'}
     wait_time = between(1, 2)
 
     @task
     def index(self):
-        response = self.client.post(self.endpoint_name, data=self.testdata[self.data_idx], headers=self.headers)
+        response = self.client.post(self.method_path, data=self.testdata[self.data_idx], headers=self.headers)
         self.data_idx += 1
         if self.data_idx == self.total_data:
             self.data_idx = 0

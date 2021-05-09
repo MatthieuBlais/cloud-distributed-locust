@@ -1,0 +1,9 @@
+[
+    {"users": 100, "duration": 100, "spawn_rate": 100},
+    {"users": 150, "duration": 220, "spawn_rate": 100},
+    {"users": 200, "duration": 340, "spawn_rate": 100},
+    {"users": 130, "duration": 400, "spawn_rate": 100},
+    {"users": 310, "duration": 500, "spawn_rate": 100},
+    {"users": 100, "duration": 740, "spawn_rate": 100},
+    {"users": 0, "duration": 1000, "spawn_rate": 100}
+]

@@ -2,19 +2,20 @@ AWSTemplateFormatVersion: 2010-09-09
 Parameters:
   # If using differnet stack name, also need to change name of the target Lambda in SF: distributed-locust-orchestration-check-master-status
 
-  locustFargateStack:
-    Description: Name of the fargate stack that created the cluster and the staging bucket
+  stagingBucket:
+    Description: Name of the bucket to use as staging area for locust
+    Type: String
     Default: distributed-locust
 
   workflowName:
     Description: Name of the step function orchestrating distributed locust
     Type: String
-    Default: ml-serving-distributed-locust
+    Default: distributed-locust-orchestration-flow
 
   lambdaPackage:
     Description: Location of the lambda code
     Type: String
-    Default: _lambdas/loadtest.zip
+    Default: _lambdas/distributedlocust.zip
 
 Resources:
 
@@ -22,9 +23,7 @@ Resources:
     Type: "AWS::Lambda::Function"
     Properties:
       Code:
-        S3Bucket: 
-          Fn::ImportValue:
-            !Sub "${locustFargateStack}-staging-bucket"
+        S3Bucket: !Ref stagingBucket
         S3Key: !Ref lambdaPackage
       Description: "Distributed locust: Check if master node is ready"
       FunctionName: !Sub "${AWS::StackName}-check-master-status"
@@ -333,8 +332,7 @@ Resources:
                   - 's3:List*'
                   - 's3:GetBucketLocation'
                 Resource:
-                  - Fn::ImportValue:
-                      !Sub "arn:aws:s3:::${locustFargateStack}-staging-bucket"
+                  - !Sub "arn:aws:s3:::${stagingBucket}"
               - Effect: Allow
                 Action:
                   - s3:PutObject
@@ -342,6 +340,5 @@ Resources:
                   - s3:DeleteObject
                   - s3:HeadObject
                 Resource:
-                  - Fn::ImportValue:
-                      !Sub "arn:aws:s3:::${locustFargateStack}-staging-bucket/*"
+                  - !Sub "arn:aws:s3:::${stagingBucket}/*"
   

@@ -1,27 +1,68 @@
 from locust.log import setup_logging
 import argparse
 import os
-from client import MasterLoadClient, WorkerLoadClient, LocalLoadClient
+from client import DistributedClient
+from interface import APIInterface, StagesShape
 
 setup_logging("INFO", None)
 
-def load_testing(client_type, host, shapes_location, output_location=None, percentiles="50,95", max_runtime=None, master_host="127.0.0.1", master_port=5557, expected_workers=1, master_fargate_task=None):
+class LoadTesting(DistributedClient):
 
-    client = LocalLoadClient(percentiles=percentiles, max_runtime=max_runtime, host=host, shapes_location=shapes_location, output_location=output_location)
-    if client_type == "master":
-        client = MasterLoadClient(expected_workers=expected_workers, percentiles=percentiles, max_runtime=max_runtime, master_host=master_host, master_port=master_port, host=host, shapes_location=shapes_location, output_location=output_location)
-    elif client_type == "worker":
-        client = WorkerLoadClient(master_host=master_host, master_port=master_port, host=host, shapes_location=shapes_location, master_fargate_task=master_fargate_task)
-    
-    client.start()
+    def __init__(self, shapes_location, output_location, region, *args, **kwargs):
+        super(DistributedClient, self).__init__(*args, **kwargs)
+        self.stages_shape = StagesShape(shapes_location["Bucket"], shapes_location["Key"], region)
+        self.output_location = output_location
+        self.region = region
+        
+    def start(self):
+        if self.node_type == "master":
+            self.start_master()
+        elif self.node_type == "worker":
+            self.start_worker()
+        else:
+            self.start_local()
 
-    
+    def save_results(self, percentiles):
+        results = {
+            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+            "min_response_time": self.env.stats.total.min_response_time,
+            "max_response_time": self.env.stats.total.max_response_time,
+            "num_requests": self.env.stats.total.num_requests,
+            "history": self.env.stats.history
+        }
+        if len(self.env.stats.history) > 0:
+            for percentile in percentiles:
+                results[f"response_time_percentile_{percentile}"] = sum([x[f"response_time_percentile_{percentile}"] for x in self.env.stats.history]) / len(self.env.stats.history)
+        if self.output_location:
+            self.upload_report(self.output_location['Bucket'], self.output_location['Key'], results)
+
+    def upload_report(self, bucket, key, results):
+        """Save output to S3"""
+        s3 = boto3.client('s3', region_name=os.environ["AWS_REGION"])
+        report = self._download_previous_report(s3, bucket, key)
+        report.append(results)
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=json.dumps(existing)
+        )
+
+    def _download_previous_report(self, s3, bucket, key):
+        """Download previous report if exists"""
+        try:
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            return json.loads(obj['Body'].read())
+        except Exception:
+            return []
+
 def parse_args():
-    os.environ["AWS_REGION"] = os.environ.get("AWS_REGION", "ap-southeast-1")
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", "-H")
+    parser.add_argument("--method", default="/")
     parser.add_argument("--shapes-bucket")
     parser.add_argument("--shapes-key")
+    parser.add_argument("--testdata-bucket")
+    parser.add_argument("--testdata-key")
     parser.add_argument("--client-type", default="local")
     parser.add_argument("--master-host", default="127.0.0.1")
     parser.add_argument("--master-port", default=5557)
@@ -31,22 +72,35 @@ def parse_args():
     parser.add_argument("--percentiles", default="50,95")
     parser.add_argument("--max-runtime", default=None)
     parser.add_argument("--fargate-task", default=None)
+    parser.add_argument("--region", default="ap-southeast-1")
+    parser.add_argument("--content-type", default="application/json")
     args = parser.parse_args()
+    set_env(args)
     return args
 
-if __name__ == "__main__":
-    args = parse_args()
+def set_env(args):
+    os.environ["AWS_REGION"] = args.region
+    os.environ["METHOD_PATH"] = args.method
+    os.environ["CONTENT_TYPE"] = args.content_type
+    os.environ["TEST_DATASET_BUCKET"] = args.testdata_bucket
+    os.environ["TEST_DATASET_KEY"] = args.testdata_key
 
-    print(f"Configuration: host={args.host}, output=s3://{args.output_bucket}/{args.output_key}, percentiles={args.percentiles}")
-    load_testing(
-        args.client_type,
-        args.host,
-        { "Bucket": args.shapes_bucket, "Key": args.shapes_key },
-        { "Bucket": args.output_bucket, "Key": args.output_key },
-        args.percentiles,
-        args.max_runtime,
-        args.master_host,
-        args.master_port,
-        args.expected_workers,
-        args.fargate_task
+
+if __name__ == "__main__":
+    print(sys.argv)
+    args = parse_args()
+    client = LoadTesting(
+        shapes_location={ "Bucket": args.shapes_bucket, "Key": args.shapes_key },
+        output_location={ "Bucket": args.output_bucket, "Key": args.output_key },
+        node_type=args.client_type,
+        host=args.host,
+        user_classes=[APIInterface],
+        expected_workers=args.expected_workers,
+        percentiles=args.percentiles,
+        max_runtime=args.max_runtime,
+        master_host=args.master_host,
+        master_port=args.master_port,
+        master_fargate_task=args.fargate_task,
+        region=args.region
     )
+    client.start()
