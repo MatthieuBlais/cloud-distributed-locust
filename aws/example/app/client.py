@@ -1,11 +1,10 @@
 import datetime
 import logging
-
-import boto3
-import gevent
 import sys
 import time
 
+import boto3
+import gevent
 from locust.env import Environment
 from locust.stats import HISTORY_STATS_INTERVAL_SEC
 from locust.stats import stats_printer
