@@ -1,39 +1,42 @@
-from locust import task, between
-from locust.contrib.fasthttp import FastHttpUser
 import csv
 import json
-import sys
-import boto3
 import os
+
+import boto3
+from locust import between
 from locust import LoadTestShape
- 
+from locust import task
+from locust.contrib.fasthttp import FastHttpUser
+
+
 class StagesShape(LoadTestShape):
     """
-        Shapes must look like this, uploaded to a bucket
-        stages = [
-            {"duration": 30, "users": 100, "spawn_rate": 100},
-            {"duration": 60, "users": 150, "spawn_rate": 100},
-            {"duration": 90, "users": 200, "spawn_rate": 100},
-            {"duration": 120, "users": 130, "spawn_rate": 100},
-            {"duration": 150, "users": 310, "spawn_rate": 100},
-            {"duration": 180, "users": 100, "spawn_rate": 100},
-            {"duration": 210, "users": 0, "spawn_rate": 100}
-        ]
+    Shapes must look like this, uploaded to a bucket
+    stages = [
+        {"duration": 30, "users": 100, "spawn_rate": 100},
+        {"duration": 60, "users": 150, "spawn_rate": 100},
+        {"duration": 90, "users": 200, "spawn_rate": 100},
+        {"duration": 120, "users": 130, "spawn_rate": 100},
+        {"duration": 150, "users": 310, "spawn_rate": 100},
+        {"duration": 180, "users": 100, "spawn_rate": 100},
+        {"duration": 210, "users": 0, "spawn_rate": 100}
+    ]
     """
+
     time_limit = 600
     spawn_rate = 20
     stop_at_end = True
     stages = []
 
     def __init__(self, stages_bucket, stages_key, mode="users", *args, **kwargs):
-        self.s3 = boto3.client('s3', region_name=os.environ["AWS_REGION"])
+        self.s3 = boto3.client("s3", region_name=os.environ["AWS_REGION"])
         self.stages = self.download_stages(stages_bucket, stages_key)
         self.step = 0
         self.time_active = False
         self.runner = None
         self.mode = mode
         super(StagesShape, self).__init__(*args, **kwargs)
-    
+
     def tick(self):
         """Called at every tick to control user spawning"""
         if self.mode == "time":
@@ -48,7 +51,7 @@ class StagesShape(LoadTestShape):
 
         target = self.stages[self.step]
         users = self.runner.user_count
- 
+
         if target["users"] == users:
             if not self.time_active:
                 self.reset_time()
@@ -77,17 +80,25 @@ class StagesShape(LoadTestShape):
 
 class APIInterface(FastHttpUser):
     """
-        Client calling the API. Download test data and submit post requests
+    Client calling the API. Download test data and submit post requests
     """
 
-    s3 = boto3.client('s3', region_name=os.environ["AWS_REGION"])
-    method_path = os.environ["METHOD_PATH"]
-    headers = {'Content-Type': os.environ.get("CONTENT_TYPE", 'application/json'), 'Accept': 'application/json'}
     wait_time = between(1, 2)
+
+    def __init__(self, *args, **kwargs):
+        super(APIInterface, self).__init__(*args, **kwargs)
+        self.s3 = boto3.client("s3", region_name=os.environ["AWS_REGION"])
+        self.method_path = os.environ["METHOD_PATH"]
+        self.headers = {
+            "Content-Type": os.environ.get("CONTENT_TYPE", "application/json"),
+            "Accept": "application/json",
+        }
 
     @task
     def index(self):
-        response = self.client.post(self.method_path, data=self.testdata[self.data_idx], headers=self.headers)
+        self.client.post(
+            self.method_path, data=self.testdata[self.data_idx], headers=self.headers
+        )
         self.data_idx += 1
         if self.data_idx == self.total_data:
             self.data_idx = 0
@@ -103,8 +114,10 @@ class APIInterface(FastHttpUser):
             self.testdata.append(row[0])
         self.total_data = len(self.testdata)
         self.data_idx = 0
-        
+
     def download_test_set(self):
         """Download test set from S3"""
-        obj = self.s3.get_object(Bucket=os.environ["TEST_DATASET_BUCKET"], Key=os.environ["TEST_DATASET_KEY"])
+        obj = self.s3.get_object(
+            Bucket=os.environ["TEST_DATASET_BUCKET"], Key=os.environ["TEST_DATASET_KEY"]
+        )
         return obj["Body"].read().decode().split()

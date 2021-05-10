@@ -1,29 +1,41 @@
-import time
-import gevent
 import datetime
-from locust.env import Environment
-from locust import LoadTestShape
-from locust.stats import stats_printer, HISTORY_STATS_INTERVAL_SEC
-import boto3
-import json
-import sys
 import logging
+import sys
+import time
+
+import boto3
+import gevent
+from locust.env import Environment
+from locust.stats import HISTORY_STATS_INTERVAL_SEC
+from locust.stats import stats_printer
 
 
-class DistributedClient():
-
-    def __init__(self, node_type, host, user_classes=[], expected_workers=1, master_host="127.0.0.1", master_port=5557, percentiles="50,95", master_fargate_task=None, max_runtime=None, region="ap-southeast-1"):
+class DistributedClient:
+    def __init__(
+        self,
+        node_type,
+        host,
+        stages_shape,
+        user_classes=[],
+        expected_workers=1,
+        master_host="127.0.0.1",
+        master_port=5557,
+        percentiles="50,95",
+        master_fargate_task=None,
+        max_runtime=None,
+        region="ap-southeast-1",
+    ):
         node_type = node_type.lower()
         if node_type not in ["worker", "master", "local"]:
             logging.error("Node type must be one of worker, master, local")
             sys.exit(1)
 
-        self.stages_shape = LoadTestShape()
+        self.stages_shape = stages_shape
         self.env = Environment(user_classes=user_classes, shape_class=self.stages_shape)
         self.env.host = host
         self.max_runtime = max_runtime
         self.node_type = node_type
-        self.ecs = boto3.client('ecs', region_name=region)
+        self.ecs = boto3.client("ecs", region_name=region)
 
         if node_type == "worker":
             self.env.create_worker_runner(master_host, master_port)
@@ -45,13 +57,20 @@ class DistributedClient():
         gevent.spawn(stats_printer(self.env.stats))
         gevent.spawn(self.stats_history, self.env.runner, self.percentiles)
         self.env.runner.start_shape()
-        gevent.spawn_later(20, self.wait_for_end(self.env, self.stages_shape, self.max_runtime))
+        gevent.spawn_later(
+            20, self.wait_for_end(self.env, self.stages_shape, self.max_runtime)
+        )
         self.save_results(self.percentiles)
 
     def start_worker(self):
         """Start a worker node if a master node exists and wait for the task to complete"""
         if self.master_fargate_task:
-            gevent.spawn_later(20, self._master_status(self.env, self.max_runtime, self.master_fargate_task))
+            gevent.spawn_later(
+                20,
+                self._master_status(
+                    self.env, self.max_runtime, self.master_fargate_task
+                ),
+            )
         self.env.runner.greenlet.join()
 
     def start_local(self):
@@ -59,10 +78,12 @@ class DistributedClient():
         gevent.spawn(stats_printer(self.env.stats))
         gevent.spawn(self.stats_history, self.env.runner, self.percentiles)
         self.env.runner.start_shape()
-        gevent.spawn_later(20, self.wait_for_end(self.env, self.stages_shape, self.max_runtime))
+        gevent.spawn_later(
+            20, self.wait_for_end(self.env, self.stages_shape, self.max_runtime)
+        )
         self.save_results(self.percentiles)
 
-    def stats_history(self, runner, percentiles=["50","95"]):
+    def stats_history(self, runner, percentiles=["50", "95"]):
         """Save current stats info to history for charts of report."""
         while True:
             stats = runner.stats
@@ -76,8 +97,10 @@ class DistributedClient():
                     "user_count": runner.user_count or 0,
                 }
                 for percentile in percentiles:
-                    pvalue = float(percentile) / (10**len(percentile))
-                    r[f"response_time_percentile_{percentile}"] = stats.total.get_current_response_time_percentile(pvalue) or 0
+                    pvalue = float(percentile) / (10 ** len(percentile))
+                    r[f"response_time_percentile_{percentile}"] = (
+                        stats.total.get_current_response_time_percentile(pvalue) or 0
+                    )
                 stats.history.append(r)
             gevent.sleep(HISTORY_STATS_INTERVAL_SEC)
 
@@ -105,12 +128,12 @@ class DistributedClient():
                 return
             if fargate_task:
                 task = self.ecs.describe_tasks(
-                    cluster=fargate_task.split("/")[1],
-                    tasks=[
-                        fargate_task
-                    ]
+                    cluster=fargate_task.split("/")[1], tasks=[fargate_task]
                 )
-                if len(task['tasks']) != 1 or task['tasks'][0]['lastStatus'] == "STOPPED":
+                if (
+                    len(task["tasks"]) != 1
+                    or task["tasks"][0]["lastStatus"] == "STOPPED"
+                ):
                     self.env.runner.quit()
                     return
             gevent.sleep(60)

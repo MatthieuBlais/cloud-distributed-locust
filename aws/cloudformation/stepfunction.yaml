@@ -69,18 +69,6 @@ Resources:
                                             {
                                               "Name": "AWS_REGION",
                                               "Value.$": "$.JobDetails.AwsRegion"
-                                            },
-                                            {
-                                              "Name": "ENDPOINT_NAME",
-                                              "Value.$": "$.EndpointName"
-                                            },
-                                            {
-                                              "Name": "TEST_DATASET_BUCKET",
-                                              "Value.$": "$.TestDataset.Bucket"
-                                            },
-                                            {
-                                              "Name": "TEST_DATASET_KEY",
-                                              "Value.$": "$.TestDataset.Key"
                                             }
                                           ]
                                       }
@@ -159,18 +147,6 @@ Resources:
                                                   {
                                                       "Name": "AWS_REGION",
                                                       "Value.$": "$.AwsRegion"
-                                                  },
-                                                  {
-                                                      "Name": "ENDPOINT_NAME",
-                                                      "Value.$": "$.EndpointName"
-                                                  },
-                                                  {
-                                                      "Name": "TEST_DATASET_BUCKET",
-                                                      "Value.$": "$.TestDataset.Bucket"
-                                                  },
-                                                  {
-                                                      "Name": "TEST_DATASET_KEY",
-                                                      "Value.$": "$.TestDataset.Key"
                                                   }
                                                   ]
                                               }
@@ -322,7 +298,7 @@ Resources:
                 Action:
                   - 'ecs:ListTasks'
                   - 'ecs:DescribeTasks'
-                Resource: 
+                Resource:
                   - '*'
         - PolicyName: s3
           PolicyDocument:
@@ -341,4 +317,3 @@ Resources:
                   - s3:HeadObject
                 Resource:
                   - !Sub "arn:aws:s3:::${stagingBucket}/*"
-  
