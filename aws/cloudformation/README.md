@@ -4,11 +4,10 @@
 
 All resources are defined and created using CloudFormation. There are two stacks to deploy:
 
-1. fargate.yaml: Create a Fargate cluster and a staging S3 bucket. You can skip this step if you already have a cluster and a bucket you want to use.
-2. stepfunction.yaml: Deploy the orchestration flow (Step Function) to start the master node, then start the worker nodes. 
+1. fargate.yaml: To create a Fargate cluster and a staging S3 bucket. You can skip this step if you already have a cluster and a bucket you want to use.
+2. stepfunction.yaml: To deploy the orchestration flow (Step Function) starting master node and worker nodes.
 
-The additional stack is a sample Task definition that you can deploy to test the overall solution. It creates an ECR repository, a task definition and the IAM roles needed by the task.
-
+The additional stack is a sample Task definition that you can deploy to test the overall solution. It creates an ECR repository, a Fargate task definition and the IAM roles needed by the task.
 
 ### Deployment
 
@@ -23,9 +22,10 @@ aws cloudformation deploy \
 
 Make sure it is correctly deployed.
 
+```
 aws cloudformation describe-stack-resources \
-    --stack-name distributed-locust-core \
-
+    --stack-name distributed-locust-core
+```
 
 2. Package and upload your lambda code. Go to the lambdas folder and run the bash command.
 
