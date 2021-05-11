@@ -3,10 +3,10 @@ import datetime
 import json
 import os
 import sys
+from locust.log import setup_logging
 
 import boto3
 from client import DistributedClient
-from locust.log import setup_logging
 from shape import APIInterface
 from shape import StagesShape
 
@@ -84,7 +84,9 @@ def parse_args():
     parser.add_argument("--percentiles", default="50,95")
     parser.add_argument("--max-runtime", default=None)
     parser.add_argument("--fargate-task", default=None)
-    parser.add_argument("--region", default="ap-southeast-1")
+    parser.add_argument(
+        "--region", default=os.environ.get("AWS_REGION", "ap-southeast-1")
+    )
     parser.add_argument("--content-type", default="application/json")
     args = parser.parse_args()
     set_env(args)
