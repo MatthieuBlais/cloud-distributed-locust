@@ -4,7 +4,6 @@ import json
 import os
 import sys
 from locust.log import setup_logging
-
 import boto3
 from client import DistributedClient
 from shape import APIInterface
