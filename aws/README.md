@@ -1,13 +1,3 @@
-# cloud-distributed-locust
-
-[Locust](https://github.com/locustio/locust): Locust is an easy to use, scriptable and scalable performance testing tool.
-
-When testing an application with hundreds or thousands of users, you may need to execute locust in distributed mode. This is natively supported by Locust itself, however when it comes to run the nodes on remote servers, it's up-to-you to do the configuration.
-
-This repo helps to run Locust using Step Function, ECR, and Fargate. GCP support may come later.
-
-
-
 ## Overall solution on AWS
 
 ![Architecture](architecture.png)
@@ -18,18 +8,18 @@ This repo helps to run Locust using Step Function, ECR, and Fargate. GCP support
 **S3 bucket**: Staging area to fetch data required by your Locust tests
 
 
-### Orchestration flow
+## Orchestration flow
 
 
-![Orchestration](./aws/orchestration.png)
+![Orchestration](orchestration.png)
 
 
-### Setting up
+## Setting up
 
-See [here](./aws/cloudformation/README.md) for setup.
+See [here](./cloudformation/README.md) for setup.
 
 
-### Sample Input
+## Sample Input
 
 Sample input to trigger the Step :
 
@@ -76,6 +66,6 @@ Sample input to trigger the Step :
 Checkout the app example for a sample application using a custom Locust shape load.
 
 
-### Sample application
+## Sample application
 
-See [here](./aws/example/README.md) for a sample load testing.
+See [here](./example/README.md) for a sample load testing.

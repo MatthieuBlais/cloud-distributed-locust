@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+
+  clusterName:
+    Description: Name of your fargate cluster
+    Type: String
+
+  stagingBucket:
+    Description: Name of the bucket to store transient files
+    Type: String
+
+Resources:
+
+  StagingBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref stagingBucket
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Status: Enabled
+            Prefix: jobs/
+            ExpirationInDays: 35
+
+  Cluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: !Ref clusterName
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /fargate/${AWS::StackName}
+      RetentionInDays: 7
+
+Outputs:
+
+  locustStagingBucket:
+    Description: Staging area
+    Value: !Ref StagingBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-staging-bucket"
+
+  locustCluster:
+    Description: Fargate cluster to run Locust
+    Value: !Ref Cluster
+    Export:
+      Name: !Sub "${AWS::StackName}-cluster"
+
+  locustLogGroup:
+    Description: Staging area
+    Value: !Ref StagingBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-log-group"
