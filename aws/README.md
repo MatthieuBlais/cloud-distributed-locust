@@ -3,8 +3,11 @@
 ![Architecture](architecture.png)
 
 **Fargate**: Serverless container platform. Deploy your dockers for Locust master and worker nodes.
+
 **Step Function**: For orchestration. First, deploy the master node. Once ready, deploy the worker nodes.
+
 **Lambda**: Python function to check the status of the master node and extract its IP address to allow worker nodes to connect.
+
 **S3 bucket**: Staging area to fetch data required by your Locust tests
 
 
