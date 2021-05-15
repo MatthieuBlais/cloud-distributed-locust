@@ -17,7 +17,7 @@ The additional stack is a sample Task definition that you can deploy to test the
 aws cloudformation deploy \
     --template-file fargate.yaml \
     --stack-name YOUR_STACK_NAME \
-    --parameter-overrides clusterName=YOUR_CLUSTER_NAME stagingBucket=YOUR_BUCKET_NAME \
+    --parameter-overrides clusterName=YOUR_CLUSTER_NAME stagingBucket=YOUR_BUCKET_NAME
 ```
 
 Make sure it is correctly deployed.
